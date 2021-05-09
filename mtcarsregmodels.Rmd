@@ -1,0 +1,185 @@
+---
+title: "Regression Models Project"
+output: pdf_document
+geometry: margin=0.5in
+---
+
+ ```{r global_options, include=FALSE}
+ knitr::opts_chunk$set(fig.width=8, fig.height=4, fig.align="center", fig.path='figs/',
+                       echo=TRUE, warning=FALSE, message=FALSE)
+ ```
+
+
+### Executive Summary
+
+In this project, we're asked to use the *mtcars* dataset and write up an analysis to
+answer two main questions:
+
+* "Is an automatic or manual transmission better for MPG"
+* "Quantify the MPG difference between automatic and manual transmissions"
+
+To answer these questions we'll build a number of linear regression models in increased complexity
+and compare them in terms of their performance. As a result of this study we find that manual
+transmission cars in this dataset have better *mpg* by about **2** miles/gallon compared to automatic 
+transmission cars. However this difference in performance is found not to be statistically significant
+based on the final model used here.
+
+### Analysis
+
+Let us begin by investigating the dataset first:
+
+```{r}
+dim(mtcars)
+head(mtcars,2)
+```
+
+As can be seen, there are a total of 32 observables (cars) that have 11 measurements.
+One can simply do `?mtcars` in the console to see what each measurement corresponds to, 
+and what their units are. For the sake of bervity, we'll not do this here.
+
+In order to tackle the afore mentioned questions, let us build a few linear models, in increasing
+complexity, following the course contet:
+
+```{r cache=TRUE}
+model1 <- lm(mpg ~ factor(am) - 1, data = mtcars)
+model2 <- update(model1, . ~ . + wt)
+model3 <- update(model2, . ~ . + factor(cyl))
+model4 <- update(model3, . ~ . + hp)
+model5 <- update(model4, . ~ . + disp)
+```
+
+Now, let's look at the coefficients of the first model:
+
+```{r echo=FALSE}
+coef(model1)
+```
+
+Here the outcome (*mpg*) is explained by a single regressor (*am* - transmission type) 
+that is a factor variable. **-1** in the formula means we don't want to have the constant term.
+As a result, we end up with two coefficients, one corresponding to the automatic transmission (0),
+and the other to the manual transmission (1). The numerical values of the coefficients 
+show the median *mpg* for each transmission type, namely **17** miles/gallon for the automatic 
+transmission and **24** miles/gallon for the manual transmission. 
+This can be verified looking at the first box plot in the Appendix.
+
+Now, the question is "Is this the end of the story? Do manual transmission cars significantly outperform
+automatic counterparts based on this dataset?". If one looks at the correlation matrix (second figure in the 
+Appendix), which shows how much the variables are correlated to each other in the dataset, 
+s/he immediately sees there are other variables that are more correlated to the *mpg* than the transmission type. 
+This means that if we add them to our model we have a better chance to describe the variability in *mpg*.
+Let's use ANOVA to see how the other models, where we add other variables, compare to the first one:
+
+```{r echo=FALSE}
+anova(model1, model2, model3,model4,model5)
+```
+
+As one can see, *Model 4*, which includes the weight, cylinder type, and horsepower in addition to
+the transmission type performs the best. Adding displacement doesn't gain us much since it
+is highly correlated to the other regressors. Let's look at the summary of this model:
+
+```{r echo=FALSE}
+summary(model4)
+```
+
+In this model, one can see that the cylinder type, horsepower, and the weight are all
+negatively correlated to the milage (i.e. the coefficients are negative). The coefficient
+of the weight is **-2.5**, which means that if all other varibles are kept fixed, the *mpg* 
+will go down by **2.5** gallons for each additional **1000** lbs in weight. The R-squared value of 
+this model tells us that it explains **99%** of the variation in *mpg*, which is very good.
+A few diagnostic plots for this model, which don't show any striking issues, 
+are shown in the third figure in the Appendix.
+Now let's see the confidence intervals for the predicted milage for a hypothetical car 
+that has the mean weight and horsepower as of the original dataset, and 6 cylinders:
+
+```{r}
+# Predict
+model4.prediction <- predict(model4, 
+                             data.frame(am = c(0,1), wt = mean(mtcars$wt), cyl = c(6), hp = mean(mtcars$hp)), 
+                             interval="confidence")
+print(model4.prediction)
+```
+
+### Conclusions
+
+What we see is that if our hypothetical car has automatic transmission it has an
+expected *mpg* of about **18** miles/gallon, and if it has manual transmission about **20** miles/gallon.
+However, the **95%** confidence level intervals are not exclusive, i.e. although the manual 
+transmission looks to have better milage (about **2** miles per gallon - which can be verified
+by the fitted model coefficients for the transmission type), it's not statistically significant.
+
+### Appendix
+
+```{r echo=FALSE}
+# Look at a few distributions in ggplot2
+require(ggplot2)
+
+# Add a simple factor variable for the transmission
+mtcars.custom <- mtcars
+mtcars.custom$transmission <- factor( mtcars$am, labels = c("Automatic","Manual") )
+
+# MPG by Transmission
+plot <- ggplot(mtcars.custom, aes(x = transmission, y = mpg, fill = transmission)) + geom_boxplot() 
+plot <- plot + scale_x_discrete(name = "Transmission Type") 
+plot <- plot + scale_y_continuous(name = "Milase per Gallon")
+plot <- plot + ggtitle("Boxplot of Miles per Gallon by Transmission Type")
+plot <- plot + theme(plot.title = element_text(hjust = 0.5))
+plot <- plot + guides(fill=FALSE)
+print(plot)
+
+# Get the correlation plot
+library(reshape2)
+cormat <- round(cor(mtcars),2)
+plot <- ggplot(melt(cormat), aes(x=Var1, y=Var2, fill=value)) + geom_tile()
+plot <- plot + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4)
+plot <- plot + ggtitle("Correlation Matrix")
+plot <- plot + scale_fill_gradient2(midpoint=0, low="blue", mid="white", high="red",
+                                    limit = c(-1,1), space ="Lab", name = "Corr. Coeff.")
+plot <- plot + theme( plot.title = element_text(hjust = 0.5),
+                      axis.title.x = element_blank(), 
+                      axis.title.y = element_blank())
+print(plot)
+
+# Model 4 Diagnostic Plots
+library(ggfortify)
+autoplot(model4, label.size = 3)
+
+# Weight by Transmission
+plot <- ggplot(mtcars.custom, aes(x = transmission, y = wt, fill = transmission)) + geom_boxplot() 
+plot <- plot + scale_x_discrete(name = "Transmission Type") 
+plot <- plot + scale_y_continuous(name = "Weight [1000 lbs]")
+plot <- plot + ggtitle("Boxplot of Weight by Transmission Type")
+plot <- plot + theme(plot.title = element_text(hjust = 0.5))
+plot <- plot + guides(fill=FALSE)
+print(plot)
+
+# MPG by Weight
+plot <- ggplot(mtcars.custom, aes(x = wt, y = mpg, color = transmission)) + geom_point(size = 3)
+plot <- plot + scale_x_continuous(name = "Weight [1000 lbs]") 
+plot <- plot + scale_y_continuous(name = "Miles per Gallon")
+plot <- plot + ggtitle("Scatter plot of Miles per Gallon by Weight")
+plot <- plot + theme(plot.title = element_text(hjust = 0.5))
+plot <- plot + labs(colour = "Transmission Type")
+plot <- plot + geom_smooth(method="lm")
+print(plot)
+
+# # MPG by Weight - Same Slope
+# mtcars.custom$pred <- predict(model2)
+# plot <- ggplot(mtcars.custom, aes(x = wt, y = mpg, color = transmission)) + geom_point(size = 3)
+# plot <- plot + scale_x_continuous(name = "Weight [1000 lbs]")
+# plot <- plot + scale_y_continuous(name = "Miles per Gallon")
+# plot <- plot + ggtitle("Scatter plot of Miles per Gallon by Weight")
+# plot <- plot + theme(plot.title = element_text(hjust = 0.5))
+# plot <- plot + labs(colour = "Transmission Type")
+# plot <- plot + geom_line(mapping=aes(y=pred))
+# print(plot)
+
+# MPG by Cylinder
+plot <- ggplot(mtcars.custom, aes(x = cyl, y = mpg, color = transmission)) + geom_point(size = 3)
+plot <- plot + scale_x_continuous(name = "Cylinders") 
+plot <- plot + scale_y_continuous(name = "Miles per Gallon")
+plot <- plot + ggtitle("Scatter plot of Miles per Gallon by Cylinders")
+plot <- plot + theme(plot.title = element_text(hjust = 0.5))
+plot <- plot + labs(colour = "Transmission Type")
+plot <- plot + geom_smooth(method="lm")
+print(plot)
+```
